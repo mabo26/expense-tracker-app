@@ -363,22 +363,56 @@ function guessCategory(text){
   return '其他';
 }
 
+function extractDateInfo(raw){
+  const now = new Date();
+  const y = now.getFullYear();
+  const pad = n=>String(n).padStart(2,'0');
+  const fmt = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+
+  let m = raw.match(/大前天/);
+  if(m){ const d=new Date(now); d.setDate(d.getDate()-3); return {date:fmt(d), match:m[0]}; }
+
+  m = raw.match(/前天/);
+  if(m){ const d=new Date(now); d.setDate(d.getDate()-2); return {date:fmt(d), match:m[0]}; }
+
+  m = raw.match(/昨天|昨日/);
+  if(m){ const d=new Date(now); d.setDate(d.getDate()-1); return {date:fmt(d), match:m[0]}; }
+
+  // YYYY-MM-DD 或 YYYY/MM/DD
+  m = raw.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if(m){ return {date: fmt(new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10))), match:m[0]}; }
+
+  // X月Y號 / X月Y日 (含「放在7月6號」這種寫法)
+  m = raw.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[號日]/);
+  if(m){ return {date: fmt(new Date(y, parseInt(m[1],10)-1, parseInt(m[2],10))), match:m[0]}; }
+
+  // M/D (不含年份,例如 7/6)
+  m = raw.match(/(\d{1,2})\/(\d{1,2})(?!\d)/);
+  if(m){ return {date: fmt(new Date(y, parseInt(m[1],10)-1, parseInt(m[2],10))), match:m[0]}; }
+
+  return null;
+}
+
 function parseExpenseTextLocal(raw){
+  const dateInfo = extractDateInfo(raw);
+  const theDate = dateInfo ? dateInfo.date : todayStr();
+  // 把日期描述從文字中移除,避免其中的數字被誤判成金額,也讓備註更乾淨
+  const cleaned = dateInfo ? raw.replace(dateInfo.match, ' ') : raw;
   const amtRegex = /\$?\s?(\d{2,6})/g;
-  const matches = [...raw.matchAll(amtRegex)];
+  const matches = [...cleaned.matchAll(amtRegex)];
   if(!matches.length) return [];
   const results = [];
   let lastPay = 'cash';
   matches.forEach((m,i)=>{
     const start = i===0 ? 0 : matches[i-1].index + matches[i-1][0].length;
-    const end = i===matches.length-1 ? raw.length : matches[i+1].index;
-    const seg = raw.slice(start,end).trim();
+    const end = i===matches.length-1 ? cleaned.length : matches[i+1].index;
+    const seg = cleaned.slice(start,end).trim();
     const amount = parseInt(m[1],10);
     let pay = lastPay;
     if(/刷卡|信用卡|刷/.test(seg)) pay='card';
     else if(/現金|付現/.test(seg)) pay='cash';
     lastPay = pay;
-    results.push({ date: todayStr(), amount, category: guessCategory(seg), pay, note: seg.slice(0,20) });
+    results.push({ date: theDate, amount, category: guessCategory(seg), pay, note: seg.slice(0,20) });
   });
   return results;
 }
