@@ -309,7 +309,7 @@ function setSyncBadge(state){
 async function loadData(){
   setSyncBadge('syncing');
   try{
-    const resp = await fetch(WORKER_URL, { method:'GET' });
+    const resp = await fetch(WORKER_URL, { method:'GET', cache:'no-store' });
     if(!resp.ok) throw new Error('worker get failed');
     const json = await resp.json();
     allEntries = json.data || [];
@@ -532,6 +532,20 @@ document.getElementById('fileImport').onchange = async (ev)=>{
 };
 
 loadData();
+
+// 加到主畫面(獨立App模式)在 iOS 上,從背景切回前景時不會自動重新整理網頁,
+// 所以資料可能停留在上次開啟時的舊快照。這裡監聽「重新變成前景可見」的時機,
+// 主動重新向 Worker 拉取最新資料,讓主畫面版跟 Safari 版隨時一致。
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible'){
+    loadData();
+  }
+});
+window.addEventListener('pageshow', function(e){
+  if(e.persisted){
+    loadData();
+  }
+});
 </script>
 </body>
 </html>
