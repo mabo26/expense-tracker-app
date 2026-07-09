@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>支出記帳表</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1B2A4A;
+    --paper:#F5F1E8;
+    --gold:#B8935F;
+    --green:#3E6B4F;
+    --red:#B5473A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Noto Sans TC',sans-serif;
+    background:var(--paper); color:var(--ink);
+    min-height:100vh; padding-bottom:80px;
+  }
+  header{
+    background:var(--ink); color:var(--paper);
+    padding:20px 16px 14px; text-align:center;
+    position:sticky; top:0; z-index:10;
+  }
+  header h1{font-family:'Noto Serif TC',serif; margin:0; font-size:20px; letter-spacing:2px;}
+  #syncBadge{font-size:11px; opacity:0.8; margin-top:4px;}
+  .monthbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; background:#fff; border-bottom:1px solid #e5ddcc;
+    position:sticky; top:64px; z-index:9;
+  }
+  .monthbar button{
+    background:none; border:none; font-size:20px; color:var(--ink); padding:4px 10px; cursor:pointer;
+  }
+  .monthbar .label{font-weight:700; font-size:16px;}
+  .summary{
+    display:flex; gap:10px; padding:12px 16px;
+  }
+  .summary .card{
+    flex:1; background:#fff; border-radius:10px; padding:10px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,0.06);
+  }
+  .summary .card .num{font-family:'Roboto Mono',monospace; font-weight:700; font-size:18px;}
+  .summary .card .lbl{font-size:11px; color:#777; margin-top:2px;}
+  .list{padding:0 16px;}
+  .entry{
+    display:flex; justify-content:space-between; align-items:center;
+    background:#fff; border-radius:10px; padding:12px 14px; margin-bottom:8px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.05);
+  }
+  .entry .left{flex:1;}
+  .entry .cat{font-weight:700; font-size:14px;}
+  .entry .note{font-size:12px; color:#888; margin-top:2px;}
+  .entry .date{font-size:11px; color:#aaa; margin-top:2px;}
+  .entry .amt{font-family:'Roboto Mono',monospace; font-weight:700; font-size:16px; color:var(--red); margin-right:10px;}
+  .entry .del{background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;}
+  .empty{text-align:center; color:#999; padding:40px 0; font-size:14px;}
+  .fab{
+    position:fixed; right:20px; bottom:20px;
+    width:56px; height:56px; border-radius:50%;
+    background:var(--ink); color:#fff; font-size:28px;
+    border:none; box-shadow:0 3px 10px rgba(0,0,0,0.25); cursor:pointer;
+  }
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(0,0,0,0.4);
+    display:none; align-items:flex-end; z-index:50;
+  }
+  .modal-bg.show{display:flex;}
+  .modal{
+    background:#fff; width:100%; border-radius:16px 16px 0 0; padding:20px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .modal h3{margin:0 0 12px; font-family:'Noto Serif TC',serif;}
+  .modal label{font-size:12px; color:#666; display:block; margin:10px 0 4px;}
+  .modal input, .modal select, .modal textarea{
+    width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; font-size:15px;
+  }
+  .modal .row{display:flex; gap:10px;}
+  .modal .row > div{flex:1;}
+  .modal-actions{display:flex; gap:10px; margin-top:16px;}
+  .modal-actions button{
+    flex:1; padding:12px; border-radius:10px; border:none; font-size:15px; cursor:pointer;
+  }
+  .btn-primary{background:var(--ink); color:#fff;}
+  .btn-secondary{background:#eee; color:#333;}
+  .quickadd{padding:16px;}
+  .quickadd textarea{
+    width:100%; padding:12px; border-radius:10px; border:1px solid #ddd; font-size:14px; min-height:60px;
+  }
+  .quickadd button{
+    margin-top:8px; width:100%; padding:12px; border-radius:10px; border:none;
+    background:var(--green); color:#fff; font-size:15px; cursor:pointer;
+  }
+  .toolbar{display:flex; gap:8px; padding:0 16px 12px; font-size:12px;}
+  .toolbar button{
+    flex:1; padding:8px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>支 出 記 帳 表</h1>
+  <div id="syncBadge">☁️ 同步中...</div>
+</header>
+
+<div class="monthbar">
+  <button id="prevBtn">‹</button>
+  <div class="label" id="monthLabel">2026年 1月</div>
+  <button id="nextBtn">›</button>
+</div>
+
+<div class="summary">
+  <div class="card"><div class="num" id="totalAmt">$0</div><div class="lbl">本月支出</div></div>
+  <div class="card"><div class="num" id="countAmt">0</div><div class="lbl">筆數</div></div>
+</div>
+
+<div class="quickadd">
+  <textarea id="textInput" placeholder="快速輸入,例如:午餐 120元 現金"></textarea>
+  <button id="quickAddBtn">✚ 新增一筆</button>
+</div>
+
+<div class="toolbar">
+  <button id="exportBtn">匯出資料</button>
+  <button id="importBtn">匯入資料</button>
+  <input type="file" id="importFile" accept=".json" style="display:none">
+</div>
+
+<div class="list" id="listEl"></div>
+
+<button class="fab" id="fabBtn">✚</button>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3>新增一筆</h3>
+    <label>日期</label>
+    <input type="date" id="mDate">
+    <div class="row">
+      <div>
+        <label>金額</label>
+        <input type="number" id="mAmount" placeholder="0">
+      </div>
+      <div>
+        <label>分類</label>
+        <select id="mCategory">
+          <option>飲食</option><option>交通</option><option>購物</option>
+          <option>娛樂</option><option>居家</option><option>醫療</option>
+          <option>其他</option>
+        </select>
+      </div>
+    </div>
+    <label>付款方式</label>
+    <select id="mPay">
+      <option value="cash">現金</option><option value="card">信用卡</option><option value="transfer">轉帳</option>
+    </select>
+    <label>備註</label>
+    <input type="text" id="mNote" placeholder="選填">
+    <div class="modal-actions">
+      <button class="btn-secondary" id="mCancel">取消</button>
+      <button class="btn-primary" id="mSave">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const WORKER_URL = 'https://curly-shape-ecea.ly010696.workers.dev';
+
+let allEntries = [];
+let curYear, curMonth;
+{
+  const d = new Date();
+  curYear = d.getFullYear();
+  curMonth = d.getMonth() + 1;
+}
+
+const syncBadge = document.getElementById('syncBadge');
+function setSyncBadge(state){
+  if(state === 'ok') syncBadge.textContent = '☁️ 已同步';
+  else if(state === 'syncing') syncBadge.textContent = '☁️ 同步中...';
+  else syncBadge.textContent = '⚠️ 未同步,僅存於本機';
+}
+
+const STORAGE_KEY = 'expense_tracker_entries';
+
+async function loadData(){
+  setSyncBadge('syncing');
+  try{
+    const resp = await fetch(WORKER_URL, { method:'GET' });
+    if(!resp.ok) throw new Error('worker get failed');
+    const json = await resp.json();
+    allEntries = json.data || [];
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(allEntries)); }catch(e){}
+    setSyncBadge('ok');
+  }catch(e){
+    console.error('load failed', e);
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      allEntries = raw ? JSON.parse(raw) : [];
+    }catch(e2){ allEntries = []; }
+    setSyncBadge('fail');
+  }
+  render();
+}
+
+async function saveData(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(allEntries)); }catch(e){}
+  setSyncBadge('syncing');
+  try{
+    const resp = await fetch(WORKER_URL, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ entries: allEntries })
+    });
+    if(!resp.ok) throw new Error('worker put failed');
+    setSyncBadge('ok');
+  }catch(e){
+    console.error('github save failed', e);
+    setSyncBadge('fail');
+  }
+}
+
+function todayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function guessCategory(text){
+  const map = {
+    '飲食':['吃','飯','午餐','晚餐','早餐','咖啡','飲料','餐','食','麵','便當'],
+    '交通':['計程車','捷運','公車','油','停車','高鐵','火車','uber','taxi'],
+    '購物':['買','購','衣服','鞋','包','電商','蝦皮','網購'],
+    '娛樂':['電影','唱歌','遊戲','旅遊','門票'],
+    '居家':['房租','水電','瓦斯','家具','日用品'],
+    '醫療':['藥','醫院','診所','看醫生']
+  };
+  for(const [cat, keys] of Object.entries(map)){
+    for(const k of keys){ if(text.includes(k)) return cat; }
+  }
+  return '其他';
+}
+
+function parseExpenseTextLocal(text){
+  const m = text.match(/(\d+(\.\d+)?)\s*元?/);
+  if(!m) return [];
+  const amount = parseFloat(m[1]);
+  const note = text.replace(m[0], '').trim();
+  const category = guessCategory(text);
+  let pay = 'cash';
+  if(text.includes('卡')) pay = 'card';
+  if(text.includes('轉帳')) pay = 'transfer';
+  return [{ date: todayStr(), amount, category, pay, note }];
+}
+
+function render(){
+  document.getElementById('monthLabel').textContent = curYear + '年 ' + curMonth + '月';
+  const filtered = allEntries.filter(e=>{
+    const d = new Date(e.date);
+    return d.getFullYear() === curYear && (d.getMonth()+1) === curMonth;
+  }).sort((a,b)=> b.date.localeCompare(a.date));
+
+  const total = filtered.reduce((s,e)=> s + Number(e.amount||0), 0);
+  document.getElementById('totalAmt').textContent = '$' + total.toLocaleString();
+  document.getElementById('countAmt').textContent = filtered.length;
+
+  const listEl = document.getElementById('listEl');
+  if(!filtered.length){
+    listEl.innerHTML = '<div class="empty">這個月還沒有紀錄</div>';
+    return;
+  }
+  listEl.innerHTML = filtered.map(e=>`
+    <div class="entry" data-id="${e.id}">
+      <div class="left">
+        <div class="cat">${e.category||'其他'}</div>
+        <div class="note">${e.note||''}</div>
+        <div class="date">${e.date}</div>
+      </div>
+      <div class="amt">$${Number(e.amount||0).toLocaleString()}</div>
+      <button class="del" onclick="deleteEntry('${e.id}')">✕</button>
+    </div>
+  `).join('');
+}
+
+window.deleteEntry = async function(id){
+  if(!confirm('確定要刪除這筆紀錄嗎?')) return;
+  allEntries = allEntries.filter(e=> e.id !== id);
+  await saveData();
+  render();
+};
+
+document.getElementById('prevBtn').onclick = ()=>{
+  curMonth--; if(curMonth < 1){ curMonth = 12; curYear--; }
+  render();
+};
+document.getElementById('nextBtn').onclick = ()=>{
+  curMonth++; if(curMonth > 12){ curMonth = 1; curYear++; }
+  render();
+};
+
+document.getElementById('quickAddBtn').onclick = async ()=>{
+  const txt = document.getElementById('textInput').value.trim();
+  if(!txt){ return; }
+  const parsed = parseExpenseTextLocal(txt);
+  if(!parsed.length){
+    alert('沒有偵測到金額,請確認句子裡有數字,或改用右下角手動新增');
+    return;
+  }
+  parsed.forEach(p=>{
+    allEntries.push({
+      id: crypto.randomUUID(),
+      date: p.date, amount:p.amount, category:p.category, pay:p.pay, note:p.note
+    });
+  });
+  await saveData();
+  curYear = parseInt(parsed[0].date.slice(0,4));
+  curMonth = parseInt(parsed[0].date.slice(5,7));
+  document.getElementById('textInput').value = '';
+  render();
+};
+
+const modalBg = document.getElementById('modalBg');
+document.getElementById('fabBtn').onclick = ()=>{
+  document.getElementById('mDate').value = todayStr();
+  document.getElementById('mAmount').value = '';
+  document.getElementById('mNote').value = '';
+  modalBg.classList.add('show');
+};
+document.getElementById('mCancel').onclick = ()=> modalBg.classList.remove('show');
+document.getElementById('mSave').onclick = async ()=>{
+  const date = document.getElementById('mDate').value || todayStr();
+  const amount = parseFloat(document.getElementById('mAmount').value);
+  if(!amount || amount <= 0){ alert('請輸入正確的金額'); return; }
+  const category = document.getElementById('mCategory').value;
+  const pay = document.getElementById('mPay').value;
+  const note = document.getElementById('mNote').value;
+  allEntries.push({ id: crypto.randomUUID(), date, amount, category, pay, note });
+  await saveData();
+  curYear = parseInt(date.slice(0,4));
+  curMonth = parseInt(date.slice(5,7));
+  modalBg.classList.remove('show');
+  render();
+};
+
+document.getElementById('exportBtn').onclick = ()=>{
+  const blob = new Blob([JSON.stringify(allEntries, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'expense-data-' + todayStr() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+document.getElementById('importBtn').onclick = ()=> document.getElementById('importFile').click();
+document.getElementById('importFile').onchange = async (ev)=>{
+  const file = ev.target.files[0];
+  if(!file) return;
+  const text = await file.text();
+  try{
+    const data = JSON.parse(text);
+    if(!Array.isArray(data)) throw new Error('格式錯誤');
+    allEntries = data;
+    await saveData();
+    render();
+    alert('匯入成功,共 ' + data.length + ' 筆');
+  }catch(e){
+    alert('匯入失敗,請確認檔案格式');
+  }
+};
+
+loadData();
+</script>
+</body>
+</html>
