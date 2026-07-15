@@ -146,6 +146,25 @@
     margin:0 16px 12px 30px; font-size:11px; color:var(--ink-2); text-align:right;
   }
 
+  .catToggleRow{margin:0 16px 12px 30px; text-align:right;}
+  .catToggleRow button{
+    background:none;border:1px solid var(--ink); color:var(--ink);
+    padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:700;
+  }
+  .catsummary{
+    margin:0 16px 14px 30px;border:1px solid var(--line);border-radius:6px;
+    background:#fff; padding:12px; display:none;
+  }
+  .catsummary.show{display:block;}
+  .catsummary .caprow{margin-bottom:10px;}
+  .catsummary .caprow:last-child{margin-bottom:2px;}
+  .catsummary .caphead{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+  .catsummary .capname{font-weight:700;color:var(--ink);}
+  .catsummary .capamt{font-family:'Roboto Mono',monospace;color:var(--stamp);font-weight:700;}
+  .catsummary .capbarbg{background:var(--paper-2);border-radius:3px;height:8px;overflow:hidden;}
+  .catsummary .capbar{background:var(--jade);height:100%;border-radius:3px;}
+  .catsummary .caplabel{font-size:11px;color:#a29b8c;margin-top:8px;text-align:right;}
+
   .quickadd{
     margin:16px 16px 0 30px;
     border:1px solid var(--line);
@@ -260,6 +279,9 @@
 
   <div class="syncrow" id="syncBadge">☁️ 同步中...</div>
 
+  <div class="catToggleRow"><button id="catToggle">📊 分類總覽</button></div>
+  <div class="catsummary" id="catSummary"></div>
+
   <div class="quickadd">
     <div class="tabs">✏️ 文字快速新增(例:午餐120現金,咖啡80刷卡)</div>
     <textarea id="textInput" placeholder="今天中午買便當120現金,下午咖啡80刷卡"></textarea>
@@ -273,7 +295,22 @@
   <div class="manualform" id="manualForm">
     <div><label>日期</label><input type="date" id="mDate"></div>
     <div><label>金額</label><input type="number" id="mAmt" placeholder="0"></div>
-    <div><label>分類</label><input type="text" id="mCat" placeholder="餐飲/交通..."></div>
+    <div><label>分類</label>
+      <select id="mCat">
+        <option value="餐飲">餐飲</option>
+        <option value="飲料">飲料</option>
+        <option value="超市/食材">超市/食材</option>
+        <option value="交通">交通</option>
+        <option value="醫療">醫療</option>
+        <option value="購物">購物</option>
+        <option value="娛樂">娛樂</option>
+        <option value="居家">居家</option>
+        <option value="居家修繕">居家修繕</option>
+        <option value="教育">教育</option>
+        <option value="蛋糕/甜點">蛋糕/甜點</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
     <div><label>付款方式</label>
       <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option></select>
     </div>
@@ -489,6 +526,32 @@ function render(){
       </div>`;
   });
   entriesEl.innerHTML = html;
+  renderCatSummary();
+}
+
+function renderCatSummary(){
+  const list = monthEntries();
+  const totals = {};
+  let grand = 0;
+  list.forEach(e=>{
+    const c = e.category || '其他';
+    totals[c] = (totals[c]||0) + Number(e.amount||0);
+    grand += Number(e.amount||0);
+  });
+  const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+  const el = document.getElementById('catSummary');
+  if(!sorted.length){
+    el.innerHTML = '<div class="caplabel">這個月還沒有紀錄</div>';
+    return;
+  }
+  el.innerHTML = sorted.map(([cat,amt])=>{
+    const pct = grand ? Math.round(amt/grand*100) : 0;
+    return `
+      <div class="caprow">
+        <div class="caphead"><span class="capname">${cat}</span><span class="capamt">$${amt.toLocaleString()}（${pct}%）</span></div>
+        <div class="capbarbg"><div class="capbar" style="width:${pct}%"></div></div>
+      </div>`;
+  }).join('') + `<div class="caplabel">本月合計 $${grand.toLocaleString()}</div>`;
 }
 
 window.deleteEntry = async function(id){
@@ -502,6 +565,10 @@ const manualForm = document.getElementById('manualForm');
 document.getElementById('manualToggle').onclick = ()=>{
   manualForm.classList.toggle('show');
   if(manualForm.classList.contains('show')) document.getElementById('mDate').value = todayStr();
+};
+
+document.getElementById('catToggle').onclick = ()=>{
+  document.getElementById('catSummary').classList.toggle('show');
 };
 
 document.getElementById('mSave').onclick = async ()=>{
