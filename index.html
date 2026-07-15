@@ -545,11 +545,13 @@ function renderCatSummary(){
     return;
   }
   el.innerHTML = sorted.map(([cat,amt])=>{
-    const pct = grand ? Math.round(amt/grand*100) : 0;
+    const rawPct = grand ? (amt/grand*100) : 0;
+    const pctLabel = rawPct>0 && rawPct<1 ? '<1' : Math.round(rawPct);
+    const barPct = Math.max(rawPct, rawPct>0?1:0); // 長條圖至少給1%寬度,才看得到
     return `
       <div class="caprow">
-        <div class="caphead"><span class="capname">${cat}</span><span class="capamt">$${amt.toLocaleString()}（${pct}%）</span></div>
-        <div class="capbarbg"><div class="capbar" style="width:${pct}%"></div></div>
+        <div class="caphead"><span class="capname">${cat}</span><span class="capamt">$${amt.toLocaleString()}（${pctLabel}%）</span></div>
+        <div class="capbarbg"><div class="capbar" style="width:${barPct}%"></div></div>
       </div>`;
   }).join('') + `<div class="caplabel">本月合計 $${grand.toLocaleString()}</div>`;
 }
