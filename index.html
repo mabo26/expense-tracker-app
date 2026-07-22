@@ -231,8 +231,7 @@
   }
   .stamp.cash{background:var(--jade);}
   .stamp.card{background:var(--amber);}
-  .stamp.suica_topup{background:#5B8DB8;}
-  .stamp.suica_pay{background:#3E8E7E;}
+  .stamp.suica{background:#3E8E7E;}
   .entry .info{flex:1;min-width:0;}
   .entry .cat{font-size:13px;font-weight:700;}
   .entry .note{font-size:11px;color:#8a8378;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -325,11 +324,12 @@
         <option value="居家">居家</option>
         <option value="居家修繕">居家修繕</option>
         <option value="教育">教育</option>
+        <option value="西瓜卡儲值">西瓜卡儲值</option>
         <option value="其他">其他</option>
       </select>
     </div>
     <div><label>付款方式</label>
-      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option><option value="suica_topup">西瓜卡儲值</option><option value="suica_pay">西瓜卡</option></select>
+      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option><option value="suica">西瓜卡</option></select>
     </div>
     <div class="full"><label>備註</label><input type="text" id="mNote" placeholder="選填"></div>
     <button id="mSave">儲存這筆</button>
@@ -429,6 +429,7 @@ function todayStr(){
 
 function guessCategory(text){
   const map = {
+    '西瓜卡儲值':['西瓜卡儲值','儲值','加值'],
     '餐飲':['吃','飯','午餐','晚餐','早餐','咖啡','飲料','餐','食','麵','便當'],
     '交通':['計程車','捷運','公車','油','停車','高鐵','火車','uber','taxi'],
     '購物':['買','購','衣服','鞋','包','電商','蝦皮','網購'],
@@ -488,8 +489,7 @@ function parseExpenseTextLocal(raw){
     const seg = cleaned.slice(start,end).trim();
     const amount = parseInt(m[1],10);
     let pay = lastPay;
-    if(/西瓜卡儲值|儲值/.test(seg)) pay='suica_topup';
-    else if(/西瓜卡|suica|Suica/.test(seg)) pay='suica_pay';
+    if(/西瓜卡|suica|Suica/.test(seg)) pay='suica';
     else if(/刷卡|信用卡|刷/.test(seg)) pay='card';
     else if(/現金|付現/.test(seg)) pay='cash';
     lastPay = pay;
@@ -535,7 +535,7 @@ function render(){
   let yCash=0, yCard=0, ySuica=0;
   yList.forEach(e=>{
     if(e.pay==='cash') yCash+=Number(e.amount);
-    else if(e.pay==='suica_topup'||e.pay==='suica_pay') ySuica+=Number(e.amount);
+    else if(e.pay==='suica') ySuica+=Number(e.amount);
     else yCard+=Number(e.amount);
   });
   document.getElementById('ySumCash').textContent = cur+yCash.toLocaleString();
@@ -547,7 +547,7 @@ function render(){
   let cash=0, card=0, suica=0;
   list.forEach(e=>{
     if(e.pay==='cash') cash+=Number(e.amount);
-    else if(e.pay==='suica_topup'||e.pay==='suica_pay') suica+=Number(e.amount);
+    else if(e.pay==='suica') suica+=Number(e.amount);
     else card+=Number(e.amount);
   });
   document.getElementById('sumCash').textContent = cur+cash.toLocaleString();
@@ -563,7 +563,7 @@ function render(){
   }
   emptyMsg.style.display='none';
 
-  const stampLabel = {cash:'現', card:'卡', suica_topup:'儲', suica_pay:'西'};
+  const stampLabel = {cash:'現', card:'卡', suica:'西'};
   let html=''; let lastDay='';
   list.forEach(e=>{
     if(e.date!==lastDay){
