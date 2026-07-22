@@ -123,6 +123,7 @@
   }
   .yearsummary .item.cash .val{color:#ffd9d3;}
   .yearsummary .item.card .val{color:#ffe9c2;}
+  .yearsummary .item.suica .val{color:#c9f2e6;}
   .summary{
     margin:0 16px 8px 30px;
     padding:14px 16px;
@@ -135,12 +136,13 @@
     font-family:'Roboto Mono', monospace;
   }
   .summary .item, .yearsummary .item{text-align:center;flex:1;}
-  .summary .item .lbl, .yearsummary .item .lbl{font-size:10px;opacity:0.75;letter-spacing:1px;font-family:'Noto Sans TC',sans-serif;}
-  .summary .item .val, .yearsummary .item .val{font-size:17px;font-weight:700;margin-top:2px;}
+  .summary .item .lbl, .yearsummary .item .lbl{font-size:9px;opacity:0.75;letter-spacing:0.5px;font-family:'Noto Sans TC',sans-serif;}
+  .summary .item .val, .yearsummary .item .val{font-size:14px;font-weight:700;margin-top:2px;}
   .summary .item.cash .val{color:#8fd6c1;}
   .summary .item.card .val{color:#f0cf8e;}
-  .summary .item.total .val{color:#fff;font-size:19px;}
-  .yearsummary .item.total .val{color:#fff;font-size:19px;}
+  .summary .item.suica .val{color:#9fd8ea;}
+  .summary .item.total .val{color:#fff;font-size:16px;}
+  .yearsummary .item.total .val{color:#fff;font-size:16px;}
 
   .syncrow{
     margin:0 16px 12px 30px; font-size:11px; color:var(--ink-2); text-align:right;
@@ -229,6 +231,8 @@
   }
   .stamp.cash{background:var(--jade);}
   .stamp.card{background:var(--amber);}
+  .stamp.suica_topup{background:#5B8DB8;}
+  .stamp.suica_pay{background:#3E8E7E;}
   .entry .info{flex:1;min-width:0;}
   .entry .cat{font-size:13px;font-weight:700;}
   .entry .note{font-size:11px;color:#8a8378;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -251,6 +255,13 @@
     padding:9px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;
   }
   #fileImport{display:none;}
+  .ledgerSwitch{display:flex;gap:8px;padding:12px 16px 0 30px;}
+  .ledgerSwitch button{
+    flex:1;border:1px solid var(--ink);background:transparent;color:var(--ink);
+    padding:8px 6px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;
+    font-family:'Noto Sans TC',sans-serif;
+  }
+  .ledgerSwitch button.active{background:var(--ink);color:var(--paper);}
 </style>
 </head>
 <body>
@@ -258,8 +269,13 @@
   <div class="spine"></div>
   <div class="cover">
     <div class="eyebrow">PASSBOOK · 存摺式</div>
-    <h1>支出記帳表</h1>
+    <h1 id="bookTitle">支出記帳表</h1>
     <div class="sub" id="coverSub">— 年度總覽 —</div>
+  </div>
+
+  <div class="ledgerSwitch" id="ledgerSwitch" style="display:none;">
+    <button id="switchToMine" class="active">📗 我的帳本</button>
+    <button id="switchToSteven">📘 Steven的帳本</button>
   </div>
 
   <div class="yearbar" id="yearBar"></div>
@@ -268,12 +284,14 @@
   <div class="yearsummary" id="yearSummary">
     <div class="item cash"><div class="lbl">年度現金</div><div class="val" id="ySumCash">$0</div></div>
     <div class="item card"><div class="lbl">年度信用卡</div><div class="val" id="ySumCard">$0</div></div>
+    <div class="item suica"><div class="lbl">年度西瓜卡</div><div class="val" id="ySumSuica">$0</div></div>
     <div class="item total"><div class="lbl">年度合計</div><div class="val" id="ySumTotal">$0</div></div>
   </div>
 
   <div class="summary" id="summary">
     <div class="item cash"><div class="lbl">本月現金</div><div class="val" id="sumCash">$0</div></div>
     <div class="item card"><div class="lbl">本月信用卡</div><div class="val" id="sumCard">$0</div></div>
+    <div class="item suica"><div class="lbl">本月西瓜卡</div><div class="val" id="sumSuica">$0</div></div>
     <div class="item total"><div class="lbl">本月合計</div><div class="val" id="sumTotal">$0</div></div>
   </div>
 
@@ -311,7 +329,7 @@
       </select>
     </div>
     <div><label>付款方式</label>
-      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option></select>
+      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option><option value="suica_topup">西瓜卡儲值</option><option value="suica_pay">西瓜卡</option></select>
     </div>
     <div class="full"><label>備註</label><input type="text" id="mNote" placeholder="選填"></div>
     <button id="mSave">儲存這筆</button>
@@ -330,10 +348,18 @@
 <script>
 const WORKER_URL = 'https://curly-shape-ecea.ly010696.workers.dev';
 
+// 網址參數決定「這支手機預設是誰的帳本」,例如加到 Steven 手機主畫面的連結是 ?user=steven
+const urlParams = new URLSearchParams(location.search);
+const homeUser = urlParams.get('user') || ''; // '' = Lydia, 'steven' = Steven
+let activeUser = homeUser; // 目前畫面顯示的是誰的帳本(Lydia 可以切換去看 Steven 的)
+
 let allEntries = [];
 let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
-const STORAGE_KEY = 'expense_tracker_entries';
+
+function storageKey(){ return activeUser ? `expense_tracker_entries_${activeUser}` : 'expense_tracker_entries'; }
+function workerUrl(){ return activeUser ? `${WORKER_URL}?user=${activeUser}` : WORKER_URL; }
+function currencySym(){ return activeUser==='steven' ? '¥' : '$'; }
 
 const syncBadge = document.getElementById('syncBadge');
 function setSyncBadge(state){
@@ -342,19 +368,36 @@ function setSyncBadge(state){
   else syncBadge.textContent = '⚠️ 未同步,僅存於本機';
 }
 
+// 只有 Lydia 自己的連結(沒有 ?user=steven)才看得到切換鈕,Steven 打開他自己的連結不會看到
+if(homeUser===''){
+  document.getElementById('ledgerSwitch').style.display = 'flex';
+  document.getElementById('switchToMine').onclick = ()=> switchLedger('');
+  document.getElementById('switchToSteven').onclick = ()=> switchLedger('steven');
+}
+
+function switchLedger(user){
+  activeUser = user;
+  document.getElementById('switchToMine').classList.toggle('active', user==='');
+  document.getElementById('switchToSteven').classList.toggle('active', user==='steven');
+  document.getElementById('bookTitle').textContent = user==='steven' ? 'Steven 的支出記帳表' : '支出記帳表';
+  curYear = new Date().getFullYear();
+  curMonth = new Date().getMonth()+1;
+  loadData();
+}
+
 async function loadData(){
   setSyncBadge('syncing');
   try{
-    const resp = await fetch(WORKER_URL, { method:'GET', cache:'no-store' });
+    const resp = await fetch(workerUrl(), { method:'GET', cache:'no-store' });
     if(!resp.ok) throw new Error('worker get failed');
     const json = await resp.json();
     allEntries = json.data || [];
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(allEntries)); }catch(e){}
+    try{ localStorage.setItem(storageKey(), JSON.stringify(allEntries)); }catch(e){}
     setSyncBadge('ok');
   }catch(e){
     console.error('load failed', e);
     try{
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey());
       allEntries = raw ? JSON.parse(raw) : [];
     }catch(e2){ allEntries = []; }
     setSyncBadge('fail');
@@ -363,10 +406,10 @@ async function loadData(){
 }
 
 async function saveData(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(allEntries)); }catch(e){}
+  try{ localStorage.setItem(storageKey(), JSON.stringify(allEntries)); }catch(e){}
   setSyncBadge('syncing');
   try{
-    const resp = await fetch(WORKER_URL, {
+    const resp = await fetch(workerUrl(), {
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ entries: allEntries })
@@ -445,7 +488,9 @@ function parseExpenseTextLocal(raw){
     const seg = cleaned.slice(start,end).trim();
     const amount = parseInt(m[1],10);
     let pay = lastPay;
-    if(/刷卡|信用卡|刷/.test(seg)) pay='card';
+    if(/西瓜卡儲值|儲值/.test(seg)) pay='suica_topup';
+    else if(/西瓜卡|suica|Suica/.test(seg)) pay='suica_pay';
+    else if(/刷卡|信用卡|刷/.test(seg)) pay='card';
     else if(/現金|付現/.test(seg)) pay='cash';
     lastPay = pay;
     results.push({ date: theDate, amount, category: guessCategory(seg), pay, note: seg.slice(0,20) });
@@ -482,22 +527,33 @@ function monthEntries(){
 }
 
 function render(){
+  const cur = currencySym();
   document.getElementById('coverSub').textContent = `— ${curYear} 年 ${curMonth} 月 —`;
   renderYearBar(); renderMonthGrid();
 
   const yList = allEntries.filter(e=>e.date.startsWith(String(curYear)));
-  let yCash=0, yCard=0;
-  yList.forEach(e=>{ if(e.pay==='cash') yCash+=Number(e.amount); else yCard+=Number(e.amount); });
-  document.getElementById('ySumCash').textContent = '$'+yCash.toLocaleString();
-  document.getElementById('ySumCard').textContent = '$'+yCard.toLocaleString();
-  document.getElementById('ySumTotal').textContent = '$'+(yCash+yCard).toLocaleString();
+  let yCash=0, yCard=0, ySuica=0;
+  yList.forEach(e=>{
+    if(e.pay==='cash') yCash+=Number(e.amount);
+    else if(e.pay==='suica_topup'||e.pay==='suica_pay') ySuica+=Number(e.amount);
+    else yCard+=Number(e.amount);
+  });
+  document.getElementById('ySumCash').textContent = cur+yCash.toLocaleString();
+  document.getElementById('ySumCard').textContent = cur+yCard.toLocaleString();
+  document.getElementById('ySumSuica').textContent = cur+ySuica.toLocaleString();
+  document.getElementById('ySumTotal').textContent = cur+(yCash+yCard+ySuica).toLocaleString();
 
   const list = monthEntries();
-  let cash=0, card=0;
-  list.forEach(e=>{ if(e.pay==='cash') cash+=Number(e.amount); else card+=Number(e.amount); });
-  document.getElementById('sumCash').textContent = '$'+cash.toLocaleString();
-  document.getElementById('sumCard').textContent = '$'+card.toLocaleString();
-  document.getElementById('sumTotal').textContent = '$'+(cash+card).toLocaleString();
+  let cash=0, card=0, suica=0;
+  list.forEach(e=>{
+    if(e.pay==='cash') cash+=Number(e.amount);
+    else if(e.pay==='suica_topup'||e.pay==='suica_pay') suica+=Number(e.amount);
+    else card+=Number(e.amount);
+  });
+  document.getElementById('sumCash').textContent = cur+cash.toLocaleString();
+  document.getElementById('sumCard').textContent = cur+card.toLocaleString();
+  document.getElementById('sumSuica').textContent = cur+suica.toLocaleString();
+  document.getElementById('sumTotal').textContent = cur+(cash+card+suica).toLocaleString();
 
   const entriesEl = document.getElementById('entries');
   const emptyMsg = document.getElementById('emptyMsg');
@@ -507,6 +563,7 @@ function render(){
   }
   emptyMsg.style.display='none';
 
+  const stampLabel = {cash:'現', card:'卡', suica_topup:'儲', suica_pay:'西'};
   let html=''; let lastDay='';
   list.forEach(e=>{
     if(e.date!==lastDay){
@@ -515,12 +572,12 @@ function render(){
     }
     html += `
       <div class="entry" data-id="${e.id}">
-        <div class="stamp ${e.pay}">${e.pay==='cash'?'現':'卡'}</div>
+        <div class="stamp ${e.pay}">${stampLabel[e.pay]||'卡'}</div>
         <div class="info">
           <div class="cat">${e.category||'其他'}</div>
           <div class="note">${e.note||''}</div>
         </div>
-        <div class="amt">$${Number(e.amount||0).toLocaleString()}</div>
+        <div class="amt">${cur}${Number(e.amount||0).toLocaleString()}</div>
         <button class="del" onclick="deleteEntry('${e.id}')">✕</button>
       </div>`;
   });
@@ -529,6 +586,7 @@ function render(){
 }
 
 function renderCatSummary(){
+  const cur = currencySym();
   const list = monthEntries();
   const totals = {};
   let grand = 0;
@@ -549,10 +607,10 @@ function renderCatSummary(){
     const barPct = Math.max(rawPct, rawPct>0?1:0); // 長條圖至少給1%寬度,才看得到
     return `
       <div class="caprow">
-        <div class="caphead"><span class="capname">${cat}</span><span class="capamt">$${amt.toLocaleString()}（${pctLabel}%）</span></div>
+        <div class="caphead"><span class="capname">${cat}</span><span class="capamt">${cur}${amt.toLocaleString()}（${pctLabel}%）</span></div>
         <div class="capbarbg"><div class="capbar" style="width:${barPct}%"></div></div>
       </div>`;
-  }).join('') + `<div class="caplabel">本月合計 $${grand.toLocaleString()}</div>`;
+  }).join('') + `<div class="caplabel">本月合計 ${cur}${grand.toLocaleString()}</div>`;
 }
 
 window.deleteEntry = async function(id){
@@ -633,6 +691,9 @@ document.getElementById('fileImport').onchange = async (ev)=>{
   }catch(e){ alert('檔案格式錯誤'); }
 };
 
+if(homeUser==='steven'){
+  document.getElementById('bookTitle').textContent = 'Steven 的支出記帳表';
+}
 loadData();
 
 // 加到主畫面(獨立App模式)在 iOS 上,從背景切回前景時不會自動重新整理網頁,
