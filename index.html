@@ -216,6 +216,9 @@
     grid-column:1/-1;background:var(--ink);color:var(--paper);border:none;
     padding:9px;border-radius:4px;font-weight:700;cursor:pointer;
   }
+  .manualform button#mCancelEdit{
+    background:none;color:var(--ink-2);border:1px solid var(--line);margin-top:-6px;
+  }
 
   .entries{margin:18px 16px 0 30px;}
   .entries .daylabel{
@@ -248,6 +251,9 @@
   }
   .entry .del{
     background:none;border:none;color:#bbb;font-size:16px;cursor:pointer;flex:none;padding:0 2px;
+  }
+  .entry .edit{
+    background:none;border:none;color:#8a8378;font-size:15px;cursor:pointer;flex:none;padding:0 4px;
   }
   .empty{
     margin:30px 16px 0 30px;text-align:center;color:#a29b8c;font-size:13px;
@@ -342,6 +348,7 @@
     </div>
     <div class="full"><label>備註</label><input type="text" id="mNote" placeholder="選填"></div>
     <button id="mSave">儲存這筆</button>
+    <button id="mCancelEdit" style="display:none;">取消編輯</button>
   </div>
 
   <div class="entries" id="entries"></div>
@@ -487,7 +494,7 @@ function parseExpenseTextLocal(raw){
   const theDate = dateInfo ? dateInfo.date : todayStr();
   // 把日期描述從文字中移除,避免其中的數字被誤判成金額,也讓備註更乾淨
   const cleaned = dateInfo ? raw.replace(dateInfo.match, ' ') : raw;
-  const amtRegex = /\$?\s?(\d{2,6})/g;
+  const amtRegex = /\$?\s?(\d{1,3}(?:,\d{3})+|\d{2,6})/g;
   const matches = [...cleaned.matchAll(amtRegex)];
   if(!matches.length) return [];
   const results = [];
@@ -496,7 +503,7 @@ function parseExpenseTextLocal(raw){
     const start = i===0 ? 0 : matches[i-1].index + matches[i-1][0].length;
     const end = i===matches.length-1 ? cleaned.length : matches[i+1].index;
     const seg = cleaned.slice(start,end).trim();
-    const amount = parseInt(m[1],10);
+    const amount = parseInt(m[1].replace(/,/g,''),10);
     let pay = lastPay;
     if(/西瓜卡|suica|Suica/.test(seg)) pay='suica';
     else if(/刷卡|信用卡|刷/.test(seg)) pay='card';
@@ -591,6 +598,7 @@ function render(){
           <div class="note">${e.note||''}</div>
         </div>
         <div class="amt">${cur}${Number(e.amount||0).toLocaleString()}</div>
+        <button class="edit" onclick="editEntry('${e.id}')">✎</button>
         <button class="del" onclick="deleteEntry('${e.id}')">✕</button>
       </div>`;
   });
@@ -633,11 +641,41 @@ window.deleteEntry = async function(id){
   render();
 };
 
+let editingId = null;
+
+window.editEntry = function(id){
+  const e = allEntries.find(x=>x.id===id);
+  if(!e) return;
+  editingId = id;
+  document.getElementById('mDate').value = e.date;
+  document.getElementById('mAmt').value = e.amount;
+  document.getElementById('mCat').value = e.category || '其他';
+  document.getElementById('mPay').value = e.pay || 'cash';
+  document.getElementById('mNote').value = e.note || '';
+  manualForm.classList.add('show');
+  document.getElementById('mSave').textContent = '更新這筆';
+  document.getElementById('mCancelEdit').style.display = 'block';
+  manualForm.scrollIntoView({behavior:'smooth', block:'center'});
+};
+
+function resetManualForm(){
+  editingId = null;
+  document.getElementById('mAmt').value='';
+  document.getElementById('mCat').value='';
+  document.getElementById('mNote').value='';
+  document.getElementById('mSave').textContent = '儲存這筆';
+  document.getElementById('mCancelEdit').style.display = 'none';
+  manualForm.classList.remove('show');
+}
+
 const manualForm = document.getElementById('manualForm');
 document.getElementById('manualToggle').onclick = ()=>{
+  if(editingId){ resetManualForm(); return; }
   manualForm.classList.toggle('show');
   if(manualForm.classList.contains('show')) document.getElementById('mDate').value = todayStr();
 };
+
+document.getElementById('mCancelEdit').onclick = ()=>{ resetManualForm(); };
 
 document.getElementById('catToggle').onclick = ()=>{
   document.getElementById('catSummary').classList.toggle('show');
@@ -650,14 +688,18 @@ document.getElementById('mSave').onclick = async ()=>{
   const category = document.getElementById('mCat').value || '其他';
   const pay = document.getElementById('mPay').value;
   const note = document.getElementById('mNote').value;
-  allEntries.push({ id: crypto.randomUUID(), date, amount, category, pay, note });
+  if(editingId){
+    const idx = allEntries.findIndex(e=>e.id===editingId);
+    if(idx!==-1){
+      allEntries[idx] = { ...allEntries[idx], date, amount, category, pay, note };
+    }
+  } else {
+    allEntries.push({ id: crypto.randomUUID(), date, amount, category, pay, note });
+  }
   await saveData();
   curYear = parseInt(date.slice(0,4));
   curMonth = parseInt(date.slice(5,7));
-  manualForm.classList.remove('show');
-  document.getElementById('mAmt').value='';
-  document.getElementById('mCat').value='';
-  document.getElementById('mNote').value='';
+  resetManualForm();
   render();
 };
 
