@@ -147,6 +147,9 @@
   .syncrow{
     margin:0 16px 12px 30px; font-size:11px; color:var(--ink-2); text-align:right;
   }
+  .topupinfo{
+    margin:-6px 16px 12px 30px; font-size:11px; color:#5B8DB8; text-align:right;
+  }
 
   .catToggleRow{margin:0 16px 12px 30px; text-align:right;}
   .catToggleRow button{
@@ -232,6 +235,7 @@
   .stamp.cash{background:var(--jade);}
   .stamp.card{background:var(--amber);}
   .stamp.suica{background:#3E8E7E;}
+  .stamp.suica_topup{background:#5B8DB8;}
   .entry .info{flex:1;min-width:0;}
   .entry .cat{font-size:13px;font-weight:700;}
   .entry .note{font-size:11px;color:#8a8378;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -295,6 +299,7 @@
   </div>
 
   <div class="syncrow" id="syncBadge">☁️ 同步中...</div>
+  <div class="topupinfo" id="topupInfo">🍉 本月西瓜卡儲值 $0　年度儲值 $0</div>
 
   <div class="catToggleRow"><button id="catToggle">📊 分類總覽</button></div>
   <div class="catsummary" id="catSummary"></div>
@@ -324,12 +329,11 @@
         <option value="居家">居家</option>
         <option value="居家修繕">居家修繕</option>
         <option value="教育">教育</option>
-        <option value="西瓜卡儲值">西瓜卡儲值</option>
         <option value="其他">其他</option>
       </select>
     </div>
     <div><label>付款方式</label>
-      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option><option value="suica">西瓜卡</option></select>
+      <select id="mPay"><option value="cash">現金</option><option value="card">信用卡</option><option value="suica_topup">西瓜卡儲值</option><option value="suica">西瓜卡</option></select>
     </div>
     <div class="full"><label>備註</label><input type="text" id="mNote" placeholder="選填"></div>
     <button id="mSave">儲存這筆</button>
@@ -429,7 +433,6 @@ function todayStr(){
 
 function guessCategory(text){
   const map = {
-    '西瓜卡儲值':['西瓜卡儲值','儲值','加值'],
     '餐飲':['吃','飯','午餐','晚餐','早餐','咖啡','飲料','餐','食','麵','便當'],
     '交通':['計程車','捷運','公車','油','停車','高鐵','火車','uber','taxi'],
     '購物':['買','購','衣服','鞋','包','電商','蝦皮','網購'],
@@ -489,7 +492,8 @@ function parseExpenseTextLocal(raw){
     const seg = cleaned.slice(start,end).trim();
     const amount = parseInt(m[1],10);
     let pay = lastPay;
-    if(/西瓜卡|suica|Suica/.test(seg)) pay='suica';
+    if(/西瓜卡儲值|儲值|加值/.test(seg)) pay='suica_topup';
+    else if(/西瓜卡|suica|Suica/.test(seg)) pay='suica';
     else if(/刷卡|信用卡|刷/.test(seg)) pay='card';
     else if(/現金|付現/.test(seg)) pay='cash';
     lastPay = pay;
@@ -532,10 +536,11 @@ function render(){
   renderYearBar(); renderMonthGrid();
 
   const yList = allEntries.filter(e=>e.date.startsWith(String(curYear)));
-  let yCash=0, yCard=0, ySuica=0;
+  let yCash=0, yCard=0, ySuica=0, yTopup=0;
   yList.forEach(e=>{
     if(e.pay==='cash') yCash+=Number(e.amount);
     else if(e.pay==='suica') ySuica+=Number(e.amount);
+    else if(e.pay==='suica_topup') yTopup+=Number(e.amount); // 儲值不算支出,不計入合計
     else yCard+=Number(e.amount);
   });
   document.getElementById('ySumCash').textContent = cur+yCash.toLocaleString();
@@ -544,16 +549,18 @@ function render(){
   document.getElementById('ySumTotal').textContent = cur+(yCash+yCard+ySuica).toLocaleString();
 
   const list = monthEntries();
-  let cash=0, card=0, suica=0;
+  let cash=0, card=0, suica=0, topup=0;
   list.forEach(e=>{
     if(e.pay==='cash') cash+=Number(e.amount);
     else if(e.pay==='suica') suica+=Number(e.amount);
+    else if(e.pay==='suica_topup') topup+=Number(e.amount); // 儲值不算支出,不計入合計
     else card+=Number(e.amount);
   });
   document.getElementById('sumCash').textContent = cur+cash.toLocaleString();
   document.getElementById('sumCard').textContent = cur+card.toLocaleString();
   document.getElementById('sumSuica').textContent = cur+suica.toLocaleString();
   document.getElementById('sumTotal').textContent = cur+(cash+card+suica).toLocaleString();
+  document.getElementById('topupInfo').textContent = `🍉 本月西瓜卡儲值 ${cur}${topup.toLocaleString()}　年度儲值 ${cur}${yTopup.toLocaleString()}（僅供參考,不計入合計）`;
 
   const entriesEl = document.getElementById('entries');
   const emptyMsg = document.getElementById('emptyMsg');
@@ -563,7 +570,7 @@ function render(){
   }
   emptyMsg.style.display='none';
 
-  const stampLabel = {cash:'現', card:'卡', suica:'西'};
+  const stampLabel = {cash:'現', card:'卡', suica:'西', suica_topup:'儲'};
   let html=''; let lastDay='';
   list.forEach(e=>{
     if(e.date!==lastDay){
@@ -587,7 +594,7 @@ function render(){
 
 function renderCatSummary(){
   const cur = currencySym();
-  const list = monthEntries();
+  const list = monthEntries().filter(e=>e.pay!=='suica_topup'); // 儲值不算支出,不列入分類統計
   const totals = {};
   let grand = 0;
   list.forEach(e=>{
