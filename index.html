@@ -153,7 +153,14 @@
 
   .syncrow{
     margin:0 16px 12px 30px; font-size:11px; color:var(--ink-2); text-align:right;
+    display:flex; align-items:center; justify-content:flex-end; gap:10px;
   }
+  .backupBtn{
+    background:none;border:1px solid var(--amber); color:var(--amber);
+    padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:700;
+    font-family:'Noto Sans TC', sans-serif;
+  }
+  .backupBtn:active{background:var(--amber); color:#fff;}
   .fxinfo{
     margin:-6px 16px 12px 30px; font-size:11px; color:#8a6a3e; text-align:right;
   }
@@ -313,7 +320,10 @@
     <div class="item total"><div class="lbl">本月合計</div><div class="val" id="sumTotal">$0</div></div>
   </div>
 
-  <div class="syncrow" id="syncBadge">☁️ 同步中...</div>
+  <div class="syncrow">
+    <span id="syncBadge">☁️ 同步中...</span>
+    <button class="backupBtn" id="backupBtn">⬇ 下載備份</button>
+  </div>
   <div class="fxinfo" id="fxInfo" style="display:none;"></div>
 
   <div class="catToggleRow"><button id="catToggle">📊 分類總覽</button></div>
@@ -420,6 +430,40 @@ function switchLedger(user){
   curMonth = new Date().getMonth()+1;
   loadData();
 }
+
+async function downloadBackup(){
+  const btn = document.getElementById('backupBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '備份中…'; btn.disabled = true;
+  try{
+    const backup = { exportedAt: new Date().toISOString(), app: '支出記帳表', ledgers: {} };
+    if(homeUser===''){
+      // Lydia 的主畫面：備份全部帳本
+      const users = [{key:'lydia', param:''}, {key:'steven', param:'steven'}, {key:'francis', param:'francis'}];
+      for(const u of users){
+        try{
+          const url = u.param ? `${WORKER_URL}?user=${u.param}` : WORKER_URL;
+          const resp = await fetch(url, { cache:'no-store' });
+          const json = await resp.json();
+          backup.ledgers[u.key] = json.data || [];
+        }catch(e){ backup.ledgers[u.key] = null; }
+      }
+    } else {
+      // Steven / Francis 自己手機的主畫面：只備份自己的帳本
+      backup.ledgers[homeUser] = allEntries;
+    }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `記帳表備份_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }catch(e){
+    alert('備份失敗，請稍後再試');
+  }
+  btn.textContent = originalText; btn.disabled = false;
+}
+document.getElementById('backupBtn').onclick = downloadBackup;
 
 async function loadData(){
   setSyncBadge('syncing');
