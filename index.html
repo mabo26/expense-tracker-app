@@ -154,6 +154,9 @@
   .syncrow{
     margin:0 16px 12px 30px; font-size:11px; color:var(--ink-2); text-align:right;
   }
+  .fxinfo{
+    margin:-6px 16px 12px 30px; font-size:11px; color:#8a6a3e; text-align:right;
+  }
 
   .catToggleRow{margin:0 16px 12px 30px; text-align:right;}
   .catToggleRow button{
@@ -267,10 +270,10 @@
     padding:9px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;
   }
   #fileImport{display:none;}
-  .ledgerSwitch{display:flex;gap:8px;padding:12px 16px 0 30px;}
+  .ledgerSwitch{display:flex;flex-wrap:wrap;gap:6px;padding:12px 16px 0 30px;}
   .ledgerSwitch button{
-    flex:1;border:1px solid var(--ink);background:transparent;color:var(--ink);
-    padding:8px 6px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;
+    flex:1 1 30%;border:1px solid var(--ink);background:transparent;color:var(--ink);
+    padding:8px 4px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;
     font-family:'Noto Sans TC',sans-serif;
   }
   .ledgerSwitch button.active{background:var(--ink);color:var(--paper);}
@@ -288,6 +291,7 @@
   <div class="ledgerSwitch" id="ledgerSwitch" style="display:none;">
     <button id="switchToMine" class="active">📗 我的帳本</button>
     <button id="switchToSteven">📘 Steven的帳本</button>
+    <button id="switchToFrancis">🍁 Francis的帳本</button>
   </div>
 
   <div class="yearbar" id="yearBar"></div>
@@ -310,6 +314,7 @@
   </div>
 
   <div class="syncrow" id="syncBadge">☁️ 同步中...</div>
+  <div class="fxinfo" id="fxInfo" style="display:none;"></div>
 
   <div class="catToggleRow"><button id="catToggle">📊 分類總覽</button></div>
   <div class="catsummary" id="catSummary"></div>
@@ -327,6 +332,13 @@
   <div class="manualform" id="manualForm">
     <div><label>日期</label><input type="date" id="mDate"></div>
     <div><label>金額</label><input type="number" id="mAmt" placeholder="0"></div>
+    <div id="mCurrencyField" style="display:none;"><label>幣別</label>
+      <select id="mCurrency">
+        <option value="CAD">加幣 CAD</option>
+        <option value="JPY">日圓 JPY</option>
+        <option value="USD">美金 USD</option>
+      </select>
+    </div>
     <div><label>分類</label>
       <select id="mCat">
         <option value="餐飲">餐飲</option>
@@ -375,7 +387,11 @@ let curMonth = new Date().getMonth()+1;
 
 function storageKey(){ return activeUser ? `expense_tracker_entries_${activeUser}` : 'expense_tracker_entries'; }
 function workerUrl(){ return activeUser ? `${WORKER_URL}?user=${activeUser}` : WORKER_URL; }
-function currencySym(){ return activeUser==='steven' ? '¥' : '$'; }
+function currencySym(){
+  if(activeUser==='steven') return '¥';
+  if(activeUser==='francis') return 'C$';
+  return '$';
+}
 
 const syncBadge = document.getElementById('syncBadge');
 function setSyncBadge(state){
@@ -384,18 +400,22 @@ function setSyncBadge(state){
   else syncBadge.textContent = '⚠️ 未同步,僅存於本機';
 }
 
-// 只有 Lydia 自己的連結(沒有 ?user=steven)才看得到切換鈕,Steven 打開他自己的連結不會看到
+// 只有 Lydia 自己的連結(沒有 ?user=steven 或 ?user=francis)才看得到切換鈕
 if(homeUser===''){
   document.getElementById('ledgerSwitch').style.display = 'flex';
   document.getElementById('switchToMine').onclick = ()=> switchLedger('');
   document.getElementById('switchToSteven').onclick = ()=> switchLedger('steven');
+  document.getElementById('switchToFrancis').onclick = ()=> switchLedger('francis');
 }
 
 function switchLedger(user){
   activeUser = user;
   document.getElementById('switchToMine').classList.toggle('active', user==='');
   document.getElementById('switchToSteven').classList.toggle('active', user==='steven');
-  document.getElementById('bookTitle').textContent = user==='steven' ? 'Steven 的支出記帳表' : '支出記帳表';
+  document.getElementById('switchToFrancis').classList.toggle('active', user==='francis');
+  const titles = { steven:'Steven 的支出記帳表', francis:'Francis 的支出記帳表' };
+  document.getElementById('bookTitle').textContent = titles[user] || '支出記帳表';
+  document.getElementById('mCurrencyField').style.display = user==='francis' ? 'block' : 'none';
   curYear = new Date().getFullYear();
   curMonth = new Date().getMonth()+1;
   loadData();
@@ -499,6 +519,7 @@ function parseExpenseTextLocal(raw){
   if(!matches.length) return [];
   const results = [];
   let lastPay = 'cash';
+  let lastCurrency = 'CAD';
   matches.forEach((m,i)=>{
     const start = i===0 ? 0 : matches[i-1].index + matches[i-1][0].length;
     const end = i===matches.length-1 ? cleaned.length : matches[i+1].index;
@@ -509,7 +530,16 @@ function parseExpenseTextLocal(raw){
     else if(/刷卡|信用卡|刷/.test(seg)) pay='card';
     else if(/現金|付現/.test(seg)) pay='cash';
     lastPay = pay;
-    results.push({ date: theDate, amount, category: guessCategory(seg), pay, note: seg.slice(0,20) });
+    const entry = { date: theDate, amount, category: guessCategory(seg), pay, note: seg.slice(0,20) };
+    if(activeUser==='francis'){
+      let currency = lastCurrency;
+      if(/美金|美元|USD|us\$/i.test(seg)) currency='USD';
+      else if(/日幣|日圓|円|JPY/i.test(seg)) currency='JPY';
+      else if(/加幣|加拿大幣|CAD|C\$/i.test(seg)) currency='CAD';
+      lastCurrency = currency;
+      entry.currency = currency;
+    }
+    results.push(entry);
   });
   return results;
 }
@@ -542,12 +572,16 @@ function monthEntries(){
   }).sort((a,b)=> b.date.localeCompare(a.date));
 }
 
+const fxSymbol = {CAD:'C$', JPY:'¥', USD:'US$'};
+
 function render(){
   const cur = currencySym();
+  const isFrancis = activeUser==='francis';
   document.getElementById('coverSub').textContent = `— ${curYear} 年 ${curMonth} 月 —`;
   renderYearBar(); renderMonthGrid();
 
-  const yList = allEntries.filter(e=>e.date.startsWith(String(curYear)));
+  const yListAll = allEntries.filter(e=>e.date.startsWith(String(curYear)));
+  const yList = isFrancis ? yListAll.filter(e=>(e.currency||'CAD')==='CAD') : yListAll;
   let yCash=0, yCard=0, ySuica=0, yTopup=0;
   yList.forEach(e=>{
     if(e.category==='西瓜卡儲值'){ yTopup+=Number(e.amount); return; } // 儲值不算支出,不計入現金/信用卡/西瓜卡/合計
@@ -561,7 +595,8 @@ function render(){
   document.getElementById('ySumTopup').textContent = cur+yTopup.toLocaleString();
   document.getElementById('ySumTotal').textContent = cur+(yCash+yCard+ySuica).toLocaleString();
 
-  const list = monthEntries();
+  const listAll = monthEntries();
+  const list = isFrancis ? listAll.filter(e=>(e.currency||'CAD')==='CAD') : listAll;
   let cash=0, card=0, suica=0, topup=0;
   list.forEach(e=>{
     if(e.category==='西瓜卡儲值'){ topup+=Number(e.amount); return; } // 儲值不算支出,不計入現金/信用卡/西瓜卡/合計
@@ -575,9 +610,30 @@ function render(){
   document.getElementById('sumTopup').textContent = cur+topup.toLocaleString();
   document.getElementById('sumTotal').textContent = cur+(cash+card+suica).toLocaleString();
 
+  // Francis 偶爾在日本/美國花的錢,用不同幣別單獨列出,不跟加幣總計混在一起加總
+  const fxInfoEl = document.getElementById('fxInfo');
+  if(isFrancis){
+    const foreignTotals = {};
+    listAll.forEach(e=>{
+      const c = e.currency || 'CAD';
+      if(c==='CAD') return;
+      if(e.category==='西瓜卡儲值') return;
+      foreignTotals[c] = (foreignTotals[c]||0) + Number(e.amount||0);
+    });
+    const parts = Object.entries(foreignTotals).map(([c,amt])=> `${fxSymbol[c]||c}${amt.toLocaleString()} (${c})`);
+    if(parts.length){
+      fxInfoEl.textContent = '🌍 本月其他幣別支出：' + parts.join('　');
+      fxInfoEl.style.display = 'block';
+    } else {
+      fxInfoEl.style.display = 'none';
+    }
+  } else {
+    fxInfoEl.style.display = 'none';
+  }
+
   const entriesEl = document.getElementById('entries');
   const emptyMsg = document.getElementById('emptyMsg');
-  if(!list.length){
+  if(!listAll.length){
     entriesEl.innerHTML=''; emptyMsg.style.display='block';
     return;
   }
@@ -585,11 +641,12 @@ function render(){
 
   const stampLabel = {cash:'現', card:'卡', suica:'西'};
   let html=''; let lastDay='';
-  list.forEach(e=>{
+  listAll.forEach(e=>{
     if(e.date!==lastDay){
       html += `<div class="daylabel">${e.date}</div>`;
       lastDay = e.date;
     }
+    const entrySym = isFrancis ? (fxSymbol[e.currency||'CAD']||'C$') : cur;
     html += `
       <div class="entry" data-id="${e.id}">
         <div class="stamp ${e.pay}">${stampLabel[e.pay]||'卡'}</div>
@@ -597,7 +654,7 @@ function render(){
           <div class="cat">${e.category||'其他'}</div>
           <div class="note">${e.note||''}</div>
         </div>
-        <div class="amt">${cur}${Number(e.amount||0).toLocaleString()}</div>
+        <div class="amt">${entrySym}${Number(e.amount||0).toLocaleString()}</div>
         <button class="edit" onclick="editEntry('${e.id}')">✎</button>
         <button class="del" onclick="deleteEntry('${e.id}')">✕</button>
       </div>`;
@@ -608,7 +665,9 @@ function render(){
 
 function renderCatSummary(){
   const cur = currencySym();
-  const list = monthEntries().filter(e=>e.category!=='西瓜卡儲值'); // 儲值不算支出,不列入分類統計
+  const isFrancis = activeUser==='francis';
+  let list = monthEntries().filter(e=>e.category!=='西瓜卡儲值'); // 儲值不算支出,不列入分類統計
+  if(isFrancis) list = list.filter(e=>(e.currency||'CAD')==='CAD'); // 分類總覽只計算加幣的部分
   const totals = {};
   let grand = 0;
   list.forEach(e=>{
@@ -652,6 +711,7 @@ window.editEntry = function(id){
   document.getElementById('mCat').value = e.category || '其他';
   document.getElementById('mPay').value = e.pay || 'cash';
   document.getElementById('mNote').value = e.note || '';
+  if(activeUser==='francis') document.getElementById('mCurrency').value = e.currency || 'CAD';
   manualForm.classList.add('show');
   document.getElementById('mSave').textContent = '更新這筆';
   document.getElementById('mCancelEdit').style.display = 'block';
@@ -663,6 +723,7 @@ function resetManualForm(){
   document.getElementById('mAmt').value='';
   document.getElementById('mCat').value='';
   document.getElementById('mNote').value='';
+  document.getElementById('mCurrency').value='CAD';
   document.getElementById('mSave').textContent = '儲存這筆';
   document.getElementById('mCancelEdit').style.display = 'none';
   manualForm.classList.remove('show');
@@ -688,13 +749,14 @@ document.getElementById('mSave').onclick = async ()=>{
   const category = document.getElementById('mCat').value || '其他';
   const pay = document.getElementById('mPay').value;
   const note = document.getElementById('mNote').value;
+  const currency = activeUser==='francis' ? document.getElementById('mCurrency').value : undefined;
   if(editingId){
     const idx = allEntries.findIndex(e=>e.id===editingId);
     if(idx!==-1){
-      allEntries[idx] = { ...allEntries[idx], date, amount, category, pay, note };
+      allEntries[idx] = { ...allEntries[idx], date, amount, category, pay, note, ...(currency?{currency}:{}) };
     }
   } else {
-    allEntries.push({ id: crypto.randomUUID(), date, amount, category, pay, note });
+    allEntries.push({ id: crypto.randomUUID(), date, amount, category, pay, note, ...(currency?{currency}:{}) });
   }
   await saveData();
   curYear = parseInt(date.slice(0,4));
@@ -713,7 +775,7 @@ document.getElementById('goBtn').onclick = async ()=>{
     return;
   }
   parsed.forEach(p=>{
-    allEntries.push({ id: crypto.randomUUID(), date:p.date, amount:p.amount, category:p.category, pay:p.pay, note:p.note });
+    allEntries.push({ id: crypto.randomUUID(), date:p.date, amount:p.amount, category:p.category, pay:p.pay, note:p.note, ...(p.currency?{currency:p.currency}:{}) });
   });
   await saveData();
   curYear = parseInt(parsed[0].date.slice(0,4));
@@ -748,6 +810,9 @@ document.getElementById('fileImport').onchange = async (ev)=>{
 
 if(homeUser==='steven'){
   document.getElementById('bookTitle').textContent = 'Steven 的支出記帳表';
+} else if(homeUser==='francis'){
+  document.getElementById('bookTitle').textContent = 'Francis 的支出記帳表';
+  document.getElementById('mCurrencyField').style.display = 'block';
 }
 loadData();
 
